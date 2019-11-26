@@ -326,7 +326,8 @@ class SerializedPageWriter : public PageWriter {
 
   int64_t total_uncompressed_size() { return total_uncompressed_size_; }
 
- private:
+  std::shared_ptr<Encryptor> get_meta_encryptor() { return meta_encryptor_; }
+
   void InitEncryption() {
     // Prepare the AAD for quick update later.
     if (data_encryptor_ != nullptr) {
@@ -376,6 +377,7 @@ class SerializedPageWriter : public PageWriter {
     }
   }
 
+private:
   std::shared_ptr<ArrowOutputStream> sink_;
   ColumnChunkMetaDataBuilder* metadata_;
   MemoryPool* pool_;
@@ -422,13 +424,16 @@ class BufferedPageWriter : public PageWriter {
   }
 
   void Close(bool has_dictionary, bool fallback) override {
+     if (pager_->get_meta_encryptor() != nullptr) {
+        pager_->UpdateEncryption(encryption::kColumnMetaData);
+     }
     // index_page_offset = -1 since they are not supported
     int64_t final_position = -1;
     PARQUET_THROW_NOT_OK(final_sink_->Tell(&final_position));
     metadata_->Finish(
         pager_->num_values(), pager_->dictionary_page_offset() + final_position, -1,
         pager_->data_page_offset() + final_position, pager_->total_compressed_size(),
-        pager_->total_uncompressed_size(), has_dictionary, fallback);
+        pager_->get_meta_encryptor());
 
     // Write metadata at end of column chunk
     metadata_->WriteTo(in_memory_sink_.get());
